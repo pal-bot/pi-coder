@@ -77,10 +77,19 @@ const routeTool = {
 async function readConfig(): Promise<Config> {
   const base = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   try {
-    return loadConfig(
-      JSON.parse(await readFile(join(base, "pi-coder", "config.json"), "utf8")),
+    const contents = await readFile(
+      join(base, "pi-coder", "config.json"),
+      "utf8",
     );
-  } catch {
+    return loadConfig(JSON.parse(contents));
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === "ENOENT"
+    )
+      return loadConfig({});
     return { models: [] };
   }
 }

@@ -26,9 +26,11 @@
   },
   "files": [
     "bin",
+    "config",
     "dist",
     "README.md",
     "LICENSE",
+    "scripts/config.mjs",
     "scripts/install.sh"
   ],
   "bin": {

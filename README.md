@@ -29,24 +29,44 @@ Authenticate the direct `anthropic`, `openai-codex`, or `openai` provider using 
 
 Run `/anthropic-auth:status` to verify that the compatibility extension loaded. Anthropic and Pi can still warn about or bill extra usage on unsupported call paths; OAuth is not a guarantee that every request consumes only subscription-plan allowance. Pi Coder's own calls use Pi's `ModelRuntime` path covered by the companion transport wrapper.
 
-Create a user configuration file. Replace model IDs with exact IDs shown by `pi --list-models` if your Pi catalogue differs. The `tier` labels are your policy choices, not inferred model capabilities.
+Pi Coder ships an opinionated model-to-tier policy, so configuration is optional. The policy is versioned in [`config/default-model-policy.json`](config/default-model-policy.json) and currently classifies the supported direct-provider catalogue by model family:
+
+- `fast`: Haiku, Codex Spark/Luna, and selected OpenAI mini/nano models
+- `balanced`: Sonnet and general GPT models
+- `strong`: Opus, Sol, and Pro models
+- `long`: Fable, Terra, and Astra models selected for long-context policy
+
+Only exact IDs present in both the shipped policy and Pi's authenticated catalogue become eligible. Inspect the resolved policy and user controls with:
 
 ```sh
-mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/pi-coder"
-cat > "${XDG_CONFIG_HOME:-$HOME/.config}/pi-coder/config.json" <<'JSON'
-{
-  "models": [
-    { "provider": "anthropic", "id": "claude-haiku-4-5", "tier": "fast" },
-    { "provider": "anthropic", "id": "claude-sonnet-4-6", "tier": "balanced" },
-    { "provider": "anthropic", "id": "claude-opus-4-6", "tier": "strong" },
-    { "provider": "openai-codex", "id": "gpt-5.6-sol", "tier": "strong" }
-  ],
-  "routerModel": "anthropic/claude-haiku-4-5"
-}
-JSON
+pic config show
+pic config path
 ```
 
-`routerModel` is optional. Without it, Pi Coder uses the cheapest eligible configured model by Pi's input plus output list rates. If a configured router model is unavailable or its call fails, the current model stays selected when eligible; otherwise the policy tries a balanced candidate. Router output must be one valid `select_route` tool call with closed enum fields. Free-form text is never parsed as a decision.
+Use `pic config` to narrow or override the shipped policy:
+
+```sh
+# A non-empty whitelist enables allow-only mode.
+pic config whitelist add anthropic/claude-sonnet-4-6
+pic config whitelist remove anthropic/claude-sonnet-4-6
+pic config whitelist clear
+
+# The blacklist always wins, including over whitelist entries.
+pic config blacklist add openai-codex/gpt-5.6-sol
+pic config blacklist remove openai-codex/gpt-5.6-sol
+pic config blacklist clear
+
+# Override a shipped tier or restore its shipped value.
+pic config tier anthropic/claude-sonnet-4-6 strong
+pic config tier anthropic/claude-sonnet-4-6 default
+
+# Catalogue IDs absent from the shipped policy require an explicit tier.
+pic config whitelist add openai-codex/future-model strong
+```
+
+Configuration is written atomically to `${XDG_CONFIG_HOME:-$HOME/.config}/pi-coder/config.json`; the directory uses mode `0700` and the file uses `0600`. Empty whitelist means the shipped defaults are active. A non-empty whitelist means only listed models are considered. These controls cannot authorize providers, proxy endpoints, or models that Pi does not report as authenticated and available.
+
+Existing `models` arrays remain supported as a legacy explicit policy. The first mutating `pic config` command converts that array to an equivalent allow-only policy before applying the requested change; it never widens the legacy list. `routerModel` is also still supported in `config.json`; without it, Pi Coder uses the cheapest eligible resolved model by Pi's input plus output list rates. If the router model is unavailable or its call fails, the current model stays selected when eligible; otherwise the policy tries a balanced candidate. Router output must be one valid `select_route` tool call with closed enum fields. Free-form text is never parsed as a decision.
 
 For development or manual loading, the command equivalent to `pic` is:
 
@@ -59,13 +79,13 @@ pi --no-extensions \
 
 `--no-extensions` disables discovered and configured extensions, including project extensions; Pi still loads the two explicit reviewed extensions. The OAuth compatibility extension must load before Pi Coder.
 
-The package manifest also supports normal Pi package installation after publication (`pi install npm:@pal-bot/pi-coder@0.1.0`). Use the explicit command above when you want to restrict extension loading.
+The package manifest also supports normal Pi package installation after publication (`pi install npm:@pal-bot/pi-coder@0.2.0`). Use the explicit command above when you want to restrict extension loading.
 
 ## Controls and policy
 
 Use `/route status`, `/route auto`, `/route off`, or `/route tier fast|balanced|strong|long`. A manual tier wins over the router and the automatic high-risk floor. Selecting a Pi model manually turns routing off until `/route auto`; Pi keeps that model. The chosen model stays active through tool-loop continuations. Pi Coder sets both model and thinking level through Pi's public extension API.
 
-Only models configured in `config.json`, available and authenticated in Pi, within Pi's active model scope, and hosted at the direct Anthropic, OpenAI Codex subscription, or OpenAI API endpoints are eligible for automatic routing. Pi Coder checks both the model URL and Pi's resolved endpoint override. OpenRouter and proxy endpoints are excluded. Image and context-window requirements filter candidates. Valid automatic decisions for high-risk requests require `strong` or `long`; low-confidence decisions cannot downgrade the current configured model. Large contexts discourage model and provider switches to preserve cache value. If no candidate meets a constraint, Pi Coder leaves Pi's current model alone and warns.
+Only models resolved from the shipped policy plus user controls, available and authenticated in Pi, within Pi's active model scope, and hosted at the direct Anthropic, OpenAI Codex subscription, or OpenAI API endpoints are eligible for automatic routing. Pi Coder checks both the model URL and Pi's resolved endpoint override. OpenRouter and proxy endpoints are excluded. Image and context-window requirements filter candidates. Valid automatic decisions for high-risk requests require `strong` or `long`; low-confidence decisions cannot downgrade the current configured model. Large contexts discourage model and provider switches to preserve cache value. If no candidate meets a constraint, Pi Coder leaves Pi's current model alone and warns.
 
 ## Local usage and privacy
 
@@ -104,6 +124,6 @@ GITHUB_TOKEN="$(gh auth token)" bun run release:dry-run --no-ci
 
 ## Current limits
 
-The deterministic high-risk detector uses a conservative keyword check on the latest prompt; it does not inspect files or tool output. Tiers are configured manually, and no dashboard or project grouping is included. The auxiliary router uses a constrained tool schema with runtime validation, but a model that does not emit the tool call causes safe fallback. Pi's `message_end` and `agent_settled` hooks provide the usage and settlement boundaries; provider billing systems remain the source of billed amounts.
+The deterministic high-risk detector uses a conservative keyword check on the latest prompt; it does not inspect files or tool output. Shipped tiers are opinionated policy and must be maintained as provider catalogues change; users can override them with `pic config`. No dashboard or project grouping is included. The auxiliary router uses a constrained tool schema with runtime validation, but a model that does not emit the tool call causes safe fallback. Pi's `message_end` and `agent_settled` hooks provide the usage and settlement boundaries; provider billing systems remain the source of billed amounts.
 
 Pi API references: [extension hooks](https://github.com/earendil-works/pi/blob/v0.87.1/packages/coding-agent/src/core/extensions/types.ts), [model registry](https://github.com/earendil-works/pi/blob/v0.87.1/packages/coding-agent/src/core/model-registry.ts), [Pi packages](https://github.com/earendil-works/pi/blob/v0.87.1/packages/coding-agent/docs/packages.md).

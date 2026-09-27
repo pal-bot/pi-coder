@@ -41,6 +41,8 @@ describe("pic CLI", () => {
     );
     expect(manifest.bin).toEqual({ pic: "bin/pic" });
     expect(manifest.files).toContain("bin");
+    expect(manifest.files).toContain("config");
+    expect(manifest.files).toContain("scripts/config.mjs");
     expect(manifest.files).toContain("scripts/install.sh");
   });
 
@@ -82,6 +84,139 @@ describe("pic CLI", () => {
     });
     requireSuccess(result);
     expect(result.stdout.trim()).toBe("update");
+  });
+
+  it("delegates pic config to the configuration command", () => {
+    const root = mkdtempSync(join(tmpdir(), "pic-config-dispatch-"));
+    const configCli = join(root, "config.mjs");
+    writeFileSync(
+      configCli,
+      'console.log(process.argv.slice(2).join("\\n"));\n',
+    );
+
+    const result = run(
+      "bash",
+      ["bin/pic", "config", "whitelist", "add", "anthropic/claude-sonnet-4-6"],
+      { PIC_CONFIG_CLI: configCli },
+    );
+    requireSuccess(result);
+    expect(result.stdout.trim().split("\n")).toEqual([
+      "whitelist",
+      "add",
+      "anthropic/claude-sonnet-4-6",
+    ]);
+  });
+
+  it("writes private whitelist and blacklist configuration with pic config", () => {
+    const root = mkdtempSync(join(tmpdir(), "pic-config-write-"));
+    const env = { XDG_CONFIG_HOME: root };
+    requireSuccess(
+      run(
+        "node",
+        [
+          "scripts/config.mjs",
+          "whitelist",
+          "add",
+          "anthropic/claude-sonnet-4-6",
+        ],
+        env,
+      ),
+    );
+    requireSuccess(
+      run(
+        "node",
+        ["scripts/config.mjs", "blacklist", "add", "openai-codex/gpt-5.6-sol"],
+        env,
+      ),
+    );
+    const path = join(root, "pi-coder", "config.json");
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
+      allowModels: ["anthropic/claude-sonnet-4-6"],
+      blockModels: ["openai-codex/gpt-5.6-sol"],
+    });
+    expect(lstatSync(join(root, "pi-coder")).mode & 0o777).toBe(0o700);
+    expect(lstatSync(path).mode & 0o777).toBe(0o600);
+  });
+
+  it("shows the same legacy explicit policy that the runtime resolves", () => {
+    const root = mkdtempSync(join(tmpdir(), "pic-config-show-"));
+    const directory = join(root, "pi-coder");
+    mkdirSync(directory);
+    writeFileSync(
+      join(directory, "config.json"),
+      JSON.stringify({
+        models: [{ provider: "anthropic", id: "legacy-only", tier: "strong" }],
+        tierOverrides: {
+          "anthropic/legacy-only": "invalid",
+          "openai/future-model": "fast",
+        },
+      }),
+    );
+    const result = run("node", ["scripts/config.mjs", "show"], {
+      XDG_CONFIG_HOME: root,
+    });
+    requireSuccess(result);
+    expect(JSON.parse(result.stdout).resolvedModels).toEqual([
+      { provider: "anthropic", id: "legacy-only", tier: "strong" },
+    ]);
+  });
+
+  it("fails closed when config control fields have malformed shapes", () => {
+    for (const malformed of [
+      { allowModels: "not-an-array" },
+      { blockModels: {} },
+      { tierOverrides: [] },
+    ]) {
+      const root = mkdtempSync(join(tmpdir(), "pic-config-malformed-"));
+      const directory = join(root, "pi-coder");
+      mkdirSync(directory);
+      writeFileSync(join(directory, "config.json"), JSON.stringify(malformed));
+      const result = run("node", ["scripts/config.mjs", "show"], {
+        XDG_CONFIG_HOME: root,
+      });
+      expect(result.status).not.toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("invalid configuration");
+    }
+  });
+
+  it("migrates a legacy explicit policy before applying config commands", () => {
+    const root = mkdtempSync(join(tmpdir(), "pic-config-migrate-"));
+    const directory = join(root, "pi-coder");
+    mkdirSync(directory);
+    const path = join(directory, "config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        models: [
+          { provider: "anthropic", id: "legacy-a", tier: "balanced" },
+          { provider: "openai-codex", id: "legacy-b", tier: "strong" },
+        ],
+      }),
+    );
+    const env = { XDG_CONFIG_HOME: root };
+    requireSuccess(
+      run(
+        "node",
+        ["scripts/config.mjs", "blacklist", "add", "anthropic/legacy-a"],
+        env,
+      ),
+    );
+    const migrated = JSON.parse(readFileSync(path, "utf8"));
+    expect(migrated.models).toBeUndefined();
+    expect(migrated.allowModels).toEqual([
+      "anthropic/legacy-a",
+      "openai-codex/legacy-b",
+    ]);
+    expect(migrated.tierOverrides).toEqual({
+      "anthropic/legacy-a": "balanced",
+      "openai-codex/legacy-b": "strong",
+    });
+    const show = run("node", ["scripts/config.mjs", "show"], env);
+    requireSuccess(show);
+    expect(JSON.parse(show.stdout).resolvedModels).toEqual([
+      { provider: "openai-codex", id: "legacy-b", tier: "strong" },
+    ]);
   });
 
   it("installs from main and pic update fast-forwards and rebuilds", () => {

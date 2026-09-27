@@ -20,10 +20,16 @@ resolve_script() {
 script_path=$(resolve_script)
 root=$(cd -P "$(dirname "$script_path")/.." >/dev/null 2>&1 && pwd)
 installer=${PIC_INSTALLER:-$root/scripts/install.sh}
+config_cli=${PIC_CONFIG_CLI:-$root/scripts/config.mjs}
 
 if [ "${1:-}" = "update" ]; then
   shift
   PIC_HOME="$root" exec "$installer" update "$@"
+fi
+
+if [ "${1:-}" = "config" ]; then
+  shift
+  exec "${PIC_NODE_BIN:-node}" "$config_cli" "$@"
 fi
 
 pi_bin=${PIC_PI_BIN:-$root/node_modules/.bin/pi}
