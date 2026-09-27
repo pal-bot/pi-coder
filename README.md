@@ -1,6 +1,6 @@
 # Pi Coder
 
-Pi Coder is a Pi extension that chooses a model once for each new user request and writes local usage records after provider responses. It uses Pi's agent loop and authentication; it is not a Pi fork or a separate TUI. It does **not** invoke, supervise, or reuse sessions from the Claude Code CLI or Codex CLI.
+Pi Coder is a Pi extension that chooses a model once for each new user request and writes local usage records after provider responses. It uses Pi's agent loop and authentication; it is not a Pi fork or a separate TUI. Anthropic Claude Pro/Max OAuth compatibility is provided by the pinned [`@gotgenes/pi-anthropic-auth`](https://github.com/gotgenes/pi-anthropic-auth) companion extension. Pi Coder does not invoke or supervise the Claude Code CLI itself.
 
 ## Setup
 
@@ -13,7 +13,9 @@ bun run build
 pi --list-models
 ```
 
-Authenticate the direct `anthropic`, `openai-codex`, or `openai` provider using Pi's `/login` flow or its supported provider environment variables. Pi's `anthropic` login supports its own Claude Pro/Max OAuth credential; this is separate from harnessing or reusing a Claude Code CLI process/session. `openai-codex` is Pi's ChatGPT/Codex subscription provider; `openai` is the API-key provider. Pi Coder never stores credentials. It checks Pi's resolved endpoint and discards any returned authentication material without logging it. The auxiliary router call goes through `ctx.modelRegistry.streamSimple()`, which resolves Pi's provider authentication at request time. An authenticated Pi model is required for every configured routing candidate.
+Authenticate the direct `anthropic`, `openai-codex`, or `openai` provider using Pi's `/login` flow or its supported provider environment variables. Run `/login anthropic` to use a Claude Pro/Max OAuth credential instead of `ANTHROPIC_API_KEY`. The companion extension preserves Pi's native login/refresh flow and applies the OAuth-compatible Anthropic request shaping to Pi Coder's main and auxiliary router calls. `openai-codex` is Pi's ChatGPT/Codex subscription provider; `openai` is the API-key provider. Pi Coder never stores credentials. It checks Pi's resolved endpoint and discards any returned authentication material without logging it. An authenticated Pi model is required for every configured routing candidate.
+
+Run `/anthropic-auth:status` to verify that the compatibility extension loaded. Anthropic and Pi can still warn about or bill extra usage on unsupported call paths; OAuth is not a guarantee that every request consumes only subscription-plan allowance. Pi Coder's own calls use Pi's `ModelRuntime` path covered by the companion transport wrapper.
 
 Create a user configuration file. Replace model IDs with exact IDs shown by `pi --list-models` if your Pi catalogue differs. The `tier` labels are your policy choices, not inferred model capabilities.
 
@@ -38,10 +40,12 @@ Run from the project where you want to use Pi. Review the built extension first 
 
 ```sh
 PI_CODER_EXT="/absolute/path/to/pi-coder/dist/extension.js"
-pi --no-extensions --extension "$PI_CODER_EXT"
+pi --no-extensions \
+  --extension npm:@gotgenes/pi-anthropic-auth@3.3.2 \
+  --extension "$PI_CODER_EXT"
 ```
 
-`--no-extensions` disables discovered and configured extensions, including project extensions; Pi still loads the explicit reviewed `--extension` path. Pi Coder has no `pi-coder` bin because Pi already provides the trusted launcher and TUI.
+`--no-extensions` disables discovered and configured extensions, including project extensions; Pi still loads the two explicit reviewed extensions. The OAuth compatibility extension must load before Pi Coder. Pi Coder has no `pi-coder` bin because Pi already provides the trusted launcher and TUI.
 
 The package manifest also supports normal Pi package installation after publication (`pi install npm:@pal-bot/pi-coder@0.1.0`). Use the explicit command above when you want to restrict extension loading.
 

@@ -34,6 +34,7 @@
   },
   "pi": {
     "extensions": [
+      "./node_modules/@gotgenes/pi-anthropic-auth/src/index.ts",
       "./dist/extension.js"
     ]
   },
@@ -50,7 +51,8 @@
     "@earendil-works/pi-coding-agent": "0.87.1"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "0.87.1"
+    "@earendil-works/pi-ai": "0.87.1",
+    "@gotgenes/pi-anthropic-auth": "3.3.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
