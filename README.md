@@ -1,6 +1,6 @@
 # Pi Coder
 
-Pi Coder is a Pi extension that chooses a model once for each new user request and writes local usage records after provider responses. It uses Pi's agent loop and authentication; it is not a Pi fork or a separate TUI.
+Pi Coder is a Pi extension that chooses a model once for each new user request and writes local usage records after provider responses. It uses Pi's agent loop and authentication; it is not a Pi fork or a separate TUI. It does **not** invoke, supervise, or reuse sessions from the Claude Code CLI or Codex CLI.
 
 ## Setup
 
@@ -13,7 +13,7 @@ bun run build
 pi --list-models
 ```
 
-Authenticate the direct `anthropic`, `openai-codex`, or `openai` provider using Pi's `/login` flow or its supported provider environment variables. `openai-codex` is Pi's ChatGPT/Codex subscription provider; `openai` is the API-key provider. Pi Coder never stores credentials. It checks Pi's resolved endpoint and discards any returned authentication material without logging it. The auxiliary router call goes through `ctx.modelRegistry.streamSimple()`, which resolves Pi's provider authentication at request time. An authenticated Pi model is required for every configured routing candidate.
+Authenticate the direct `anthropic`, `openai-codex`, or `openai` provider using Pi's `/login` flow or its supported provider environment variables. Pi's `anthropic` login supports its own Claude Pro/Max OAuth credential; this is separate from harnessing or reusing a Claude Code CLI process/session. `openai-codex` is Pi's ChatGPT/Codex subscription provider; `openai` is the API-key provider. Pi Coder never stores credentials. It checks Pi's resolved endpoint and discards any returned authentication material without logging it. The auxiliary router call goes through `ctx.modelRegistry.streamSimple()`, which resolves Pi's provider authentication at request time. An authenticated Pi model is required for every configured routing candidate.
 
 Create a user configuration file. Replace model IDs with exact IDs shown by `pi --list-models` if your Pi catalogue differs. The `tier` labels are your policy choices, not inferred model capabilities.
 
