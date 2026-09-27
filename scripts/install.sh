@@ -39,14 +39,13 @@ validate_origin() {
 }
 
 rollback_update() {
-  local status=$?
-  trap - ERR
+  local status=${1:-1}
   if [ "$update_started" = "1" ] && [ -n "$previous_head" ]; then
     printf 'pic installer: update failed; restoring %s\n' "$previous_head" >&2
     git -C "$home" reset --hard "$previous_head" >&2 || true
     rm -rf -- "$home/node_modules" "$home/dist"
-    "$bun_bin" --cwd "$home" install --frozen-lockfile >&2 || true
-    "$bun_bin" --cwd "$home" run build >&2 || true
+    (cd "$home" && "$bun_bin" install --frozen-lockfile) >&2 || true
+    (cd "$home" && "$bun_bin" run build) >&2 || true
   fi
   exit "$status"
 }
@@ -76,8 +75,7 @@ case "$action" in
     git -C "$home" fetch --prune origin main
     git -C "$home" checkout main
     update_started=1
-    trap rollback_update ERR
-    git -C "$home" merge --ff-only origin/main
+    git -C "$home" merge --ff-only origin/main || rollback_update $?
     ;;
   *)
     fail "usage: install.sh [install|update]"
@@ -89,10 +87,14 @@ if [ -e "$destination" ] && [ ! -L "$destination" ]; then
   fail "refusing to replace non-symlink destination: $destination"
 fi
 
-"$bun_bin" --cwd "$home" install --frozen-lockfile
-"$bun_bin" --cwd "$home" run build
+if [ "$update_started" = "1" ]; then
+  (cd "$home" && "$bun_bin" install --frozen-lockfile) || rollback_update $?
+  (cd "$home" && "$bun_bin" run build) || rollback_update $?
+else
+  (cd "$home" && "$bun_bin" install --frozen-lockfile)
+  (cd "$home" && "$bun_bin" run build)
+fi
 update_started=0
-trap - ERR
 
 mkdir -p "$bin_dir"
 ln -sfn "$home/bin/pic" "$destination"
