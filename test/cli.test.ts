@@ -129,13 +129,23 @@ describe("pic CLI", () => {
         env,
       ),
     );
+    requireSuccess(
+      run(
+        "node",
+        ["scripts/config.mjs", "router", "openai-codex/gpt-5.6-sol"],
+        env,
+      ),
+    );
     const path = join(root, "pi-coder", "config.json");
     expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({
       allowModels: ["anthropic/claude-sonnet-4-6"],
       blockModels: ["openai-codex/gpt-5.6-sol"],
+      routerModel: "openai-codex/gpt-5.6-sol",
     });
     expect(lstatSync(join(root, "pi-coder")).mode & 0o777).toBe(0o700);
     expect(lstatSync(path).mode & 0o777).toBe(0o600);
+    requireSuccess(run("node", ["scripts/config.mjs", "router", "auto"], env));
+    expect(JSON.parse(readFileSync(path, "utf8")).routerModel).toBeUndefined();
   });
 
   it("shows the same legacy explicit policy that the runtime resolves", () => {
@@ -166,6 +176,8 @@ describe("pic CLI", () => {
       { allowModels: "not-an-array" },
       { blockModels: {} },
       { tierOverrides: [] },
+      { routerModel: [] },
+      { routerModel: "proxy/model" },
     ]) {
       const root = mkdtempSync(join(tmpdir(), "pic-config-malformed-"));
       const directory = join(root, "pi-coder");

@@ -83,6 +83,13 @@ export function loadConfig(value: unknown): Config {
       Array.isArray(raw.tierOverrides))
   )
     throw new Error("config.tierOverrides must be an object when present");
+  if (
+    raw.routerModel !== undefined &&
+    (typeof raw.routerModel !== "string" || !parseModelKey(raw.routerModel))
+  )
+    throw new Error(
+      "config.routerModel must be a direct provider/model when present",
+    );
 
   const legacyModels = Array.isArray(raw.models)
     ? raw.models.flatMap((value) => {

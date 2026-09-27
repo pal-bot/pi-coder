@@ -60,13 +60,19 @@ pic config blacklist clear
 pic config tier anthropic/claude-sonnet-4-6 strong
 pic config tier anthropic/claude-sonnet-4-6 default
 
+# Pin the auxiliary routing decision model, or return to automatic selection.
+pic config router anthropic/claude-haiku-4-5
+pic config router auto
+
 # Catalogue IDs absent from the shipped policy require an explicit tier.
 pic config whitelist add openai-codex/future-model strong
 ```
 
 Configuration is written atomically to `${XDG_CONFIG_HOME:-$HOME/.config}/pi-coder/config.json`; the directory uses mode `0700` and the file uses `0600`. Empty whitelist means the shipped defaults are active. A non-empty whitelist means only listed models are considered. These controls cannot authorize providers, proxy endpoints, or models that Pi does not report as authenticated and available.
 
-Existing `models` arrays remain supported as a legacy explicit policy. The first mutating `pic config` command converts that array to an equivalent allow-only policy before applying the requested change; it never widens the legacy list. `routerModel` is also still supported in `config.json`; without it, Pi Coder uses the cheapest eligible resolved model by Pi's input plus output list rates. If the router model is unavailable or its call fails, the current model stays selected when eligible; otherwise the policy tries a balanced candidate. Router output must be one valid `select_route` tool call with closed enum fields. Free-form text is never parsed as a decision.
+Existing `models` arrays remain supported as a legacy explicit policy. The first mutating `pic config` command converts that array to an equivalent allow-only policy before applying the requested change; it never widens the legacy list. Without a pinned router model, Pi Coder uses the cheapest eligible resolved model by Pi's input plus output list rates; this is not necessarily Pi's currently selected model. If the router model is unavailable or its call fails, the current model stays selected when eligible; otherwise deterministic policy chooses a fallback.
+
+Every fresh turn displays the selected worker model, tier, confidence, reason code, routing model (or policy-only fallback), and total routing-decision latency. `/route status` retains the last settled decision rather than losing it when the tool loop ends.
 
 For development or manual loading, the command equivalent to `pic` is:
 

@@ -35,6 +35,7 @@ function usage(message) {
   pic config blacklist remove <provider/model>
   pic config blacklist clear
   pic config tier <provider/model> <fast|balanced|strong|long|default>
+  pic config router <provider/model|auto>
 `);
   process.exit(message ? 1 : 0);
 }
@@ -65,6 +66,20 @@ function readUserConfig() {
         Array.isArray(value.tierOverrides))
     )
       throw new Error("invalid configuration: tierOverrides must be an object");
+    if (value.routerModel !== undefined) {
+      const parts =
+        typeof value.routerModel === "string"
+          ? value.routerModel.split("/")
+          : [];
+      if (
+        parts.length !== 2 ||
+        !providers.has(parts[0]) ||
+        !parts[1]
+      )
+        throw new Error(
+          "invalid configuration: routerModel must be a direct provider/model",
+        );
+    }
     return value;
   } catch (error) {
     if (error && error.code === "ENOENT") return {};
@@ -201,6 +216,7 @@ if (command === "show") {
             ? "allow-only"
             : "shipped-defaults",
         user: config,
+        routerModel: config.routerModel ?? "auto (cheapest eligible)",
         resolvedModels: resolvedPolicy(config),
       },
       null,
@@ -212,7 +228,11 @@ if (command === "show") {
 
 migrateLegacyPolicy(config);
 
-if (command === "whitelist" || command === "blacklist") {
+if (command === "router") {
+  if (!action) usage("router expects provider/model or auto");
+  if (action === "auto") delete config.routerModel;
+  else config.routerModel = validateKey(action);
+} else if (command === "whitelist" || command === "blacklist") {
   const property = command === "whitelist" ? "allowModels" : "blockModels";
   if (action === "clear") {
     config[property] = [];

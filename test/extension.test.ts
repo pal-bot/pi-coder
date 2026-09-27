@@ -49,14 +49,19 @@ it("routes through Pi auth with only the latest prompt and records settled usage
       }),
     );
     const handlers = new Map<string, Handler>();
+    const commands = new Map<string, Handler>();
     const chosen: string[] = [];
+    const notifications: string[] = [];
     let activationSucceeds = true;
+    let routerFails = false;
+    let routerInvalid = false;
     const pi = {
       on: (name: string, handler: Handler) => {
         handlers.set(name, handler);
         return () => {};
       },
-      registerCommand: () => {},
+      registerCommand: (name: string, options: { handler: Handler }) =>
+        commands.set(name, options.handler),
       setModel: async (m: { id: string }) => {
         chosen.push(m.id);
         return activationSucceeds;
@@ -85,29 +90,53 @@ it("routes through Pi auth with only the latest prompt and records settled usage
       modelRegistry: {
         getAvailable: () => [router, worker],
         hasConfiguredAuth: () => true,
-        getApiKeyAndHeaders: async () => ({ ok: true }),
+        getApiKeyAndHeaders: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return { ok: true };
+        },
         find: (p: string, id: string) =>
           [router, worker].find((m) => m.provider === p && m.id === id),
         streamSimple: (_m: unknown, context: unknown) => {
           auxiliary = context;
           return {
-            result: async () => ({
-              content: [
-                {
-                  type: "toolCall",
-                  name: "select_route",
-                  arguments: {
-                    tier: "fast",
-                    confidence: "high",
-                    reasonCode: "simple",
+            result: async () => {
+              if (routerFails) throw new Error("router failed");
+              if (routerInvalid)
+                return {
+                  content: [{ type: "text", text: "not a routing tool call" }],
+                  usage: {
+                    input: 10,
+                    output: 2,
+                    cacheRead: 0,
+                    cacheWrite: 0,
                   },
+                  provider: "openai",
+                  model: "route",
+                  stopReason: "stop",
+                };
+              return {
+                content: [
+                  {
+                    type: "toolCall",
+                    name: "select_route",
+                    arguments: {
+                      tier: "fast",
+                      confidence: "high",
+                      reasonCode: "simple",
+                    },
+                  },
+                ],
+                usage: {
+                  input: 10,
+                  output: 2,
+                  cacheRead: 0,
+                  cacheWrite: 0,
                 },
-              ],
-              usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0 },
-              provider: "openai",
-              model: "route",
-              stopReason: "toolUse",
-            }),
+                provider: "openai",
+                model: "route",
+                stopReason: "toolUse",
+              };
+            },
           };
         },
       },
@@ -117,7 +146,7 @@ it("routes through Pi auth with only the latest prompt and records settled usage
         contextWindow: 100000,
         percent: 0.1,
       }),
-      ui: { notify: () => {} },
+      ui: { notify: (message: string) => notifications.push(message) },
     };
     const extension = (await import("../src/extension.js")).default;
     extension(pi as never);
@@ -128,6 +157,18 @@ it("routes through Pi auth with only the latest prompt and records settled usage
     expect(JSON.stringify(auxiliary)).toContain("LATEST_PROMPT");
     expect(JSON.stringify(auxiliary)).not.toContain("OLD_TRANSCRIPT");
     expect(chosen).toEqual(["route"]);
+    expect(notifications).toContainEqual(
+      expect.stringMatching(
+        /^Pi Coder → openai\/route · fast · high · simple · via openai\/route · \d+ms$/,
+      ),
+    );
+    expect(
+      Number(
+        notifications
+          .find((message) => message.startsWith("Pi Coder →"))
+          ?.match(/(\d+)ms$/)?.[1],
+      ),
+    ).toBeGreaterThanOrEqual(15);
     await handlers.get("message_end")?.(
       {
         message: {
@@ -143,6 +184,10 @@ it("routes through Pi auth with only the latest prompt and records settled usage
       ctx,
     );
     await handlers.get("agent_settled")?.({}, ctx);
+    await commands.get("route")?.("status", ctx);
+    expect(notifications.at(-1)).toMatch(
+      /last openai\/route · fast · high · simple · via openai\/route · \d+ms/,
+    );
     const records = (
       await readFile(
         join(
@@ -217,11 +262,81 @@ it("routes through Pi auth with only the latest prompt and records settled usage
       tier: "balanced",
       reasonCode: "activation_failed",
     });
+
+    activationSucceeds = true;
+    routerFails = true;
+    ctx.model = worker;
+    await handlers.get("before_agent_start")?.(
+      { prompt: "ROUTER_FAILURE_PROMPT", images: [] },
+      ctx,
+    );
+    expect(notifications.at(-1)).toMatch(
+      /^Pi Coder → anthropic\/work · balanced · low · router_failure · router openai\/route failed; policy fallback · \d+ms$/,
+    );
+
+    routerFails = false;
+    routerInvalid = true;
+    await handlers.get("before_agent_start")?.(
+      { prompt: "INVALID_ROUTER_RESPONSE", images: [] },
+      ctx,
+    );
+    expect(notifications.at(-1)).toMatch(
+      /^Pi Coder → anthropic\/work · balanced · low · router_failure · router openai\/route failed; policy fallback · \d+ms$/,
+    );
   } finally {
     if (oldConfig === undefined) delete process.env.XDG_CONFIG_HOME;
     else process.env.XDG_CONFIG_HOME = oldConfig;
     if (oldState === undefined) delete process.env.XDG_STATE_HOME;
     else process.env.XDG_STATE_HOME = oldState;
+  }
+});
+
+it("discloses the retained model when no configured model is eligible", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pi-coder-no-eligible-"));
+  const oldConfig = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = root;
+  try {
+    const handlers = new Map<string, Handler>();
+    const notifications: string[] = [];
+    const pi = {
+      on: (name: string, handler: Handler) => {
+        handlers.set(name, handler);
+        return () => {};
+      },
+      registerCommand: () => {},
+      setModel: async () => true,
+      setThinkingLevel: () => {},
+    };
+    const ctx = {
+      model: {
+        provider: "openai",
+        id: "unlisted",
+        contextWindow: 100000,
+        input: ["text"],
+        cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
+      },
+      scopedModels: [],
+      modelRegistry: {
+        getAvailable: () => [],
+        hasConfiguredAuth: () => true,
+        getApiKeyAndHeaders: async () => ({ ok: true }),
+        find: () => undefined,
+      },
+      sessionManager: { getSessionId: () => "no-eligible-session" },
+      getContextUsage: () => undefined,
+      ui: { notify: (message: string) => notifications.push(message) },
+    };
+    (await import("../src/extension.js")).default(pi as never);
+    await handlers.get("before_agent_start")?.(
+      { prompt: "hello", images: [] },
+      ctx,
+    );
+    expect(notifications.at(-1)).toMatch(
+      /^Pi Coder → openai\/unlisted · balanced · low · no_eligible_model · router unavailable · \d+ms$/,
+    );
+  } finally {
+    if (oldConfig === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = oldConfig;
   }
 });
 
@@ -233,6 +348,7 @@ it("records usage when routing has no configuration", async () => {
   process.env.XDG_STATE_HOME = root;
   try {
     const handlers = new Map<string, Handler>();
+    const notifications: string[] = [];
     const pi = {
       on: (name: string, handler: Handler) => {
         handlers.set(name, handler);
@@ -253,7 +369,7 @@ it("records usage when routing has no configuration", async () => {
       },
       sessionManager: { getSessionId: () => "unconfigured-session" },
       getContextUsage: () => undefined,
-      ui: { notify: () => {} },
+      ui: { notify: (message: string) => notifications.push(message) },
     };
     (await import("../src/extension.js")).default(pi as never);
     await handlers.get("model_select")?.(

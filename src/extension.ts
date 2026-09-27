@@ -30,6 +30,18 @@ import {
 } from "./usage.js";
 
 type ChosenModel = Model<Api> & { tier: Tier };
+interface DecisionDisclosure {
+  provider: string;
+  model: string;
+  tier: Tier | "none";
+  confidence: string;
+  reasonCode: string;
+  via: string;
+  latencyMs: number;
+}
+function formatDecision(decision: DecisionDisclosure): string {
+  return `${decision.provider}/${decision.model} · ${decision.tier} · ${decision.confidence} · ${decision.reasonCode} · ${decision.via} · ${decision.latencyMs}ms`;
+}
 function withTier(model: Model<Api>, tier: Tier): ChosenModel {
   return { ...model, tier };
 }
@@ -201,6 +213,7 @@ export default function extension(pi: ExtensionAPI): void {
   let routerStartedAt = 0;
   let requestStartedAt = 0;
   let settingModel = false;
+  let lastDecision: DecisionDisclosure | undefined;
   function addUsage(usage: Usage | undefined) {
     if (!usage) return;
     totals.input += usage.input;
@@ -236,6 +249,7 @@ export default function extension(pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (event, ctx) => {
     activeRequestId = randomUUID();
     requestStartedAt = Date.now();
+    const decisionStartedAt = requestStartedAt;
     routerAttempted = false;
     responseCount = 0;
     totalCost = 0;
@@ -301,6 +315,7 @@ export default function extension(pi: ExtensionAPI): void {
         "warning",
       );
     }
+    const decisionLatencyMs = Math.max(0, Date.now() - decisionStartedAt);
     const router = controller.lastRouterResult();
     const requestId = activeRequestId;
     if (routerAttempted && routerModel) {
@@ -342,7 +357,41 @@ export default function extension(pi: ExtensionAPI): void {
         stopReason: router?.stopReason ?? "error",
       });
     }
-    if (!selected) return;
+    const via =
+      routerAttempted && routerModel
+        ? router?.decision
+          ? `via ${routerModel.provider}/${routerModel.id}`
+          : `router ${routerModel.provider}/${routerModel.id} failed; policy fallback`
+        : controller.status().mode === "auto"
+          ? "router unavailable"
+          : "policy-only";
+    const publish = (decision: DecisionDisclosure) => {
+      lastDecision = decision;
+      ctx.ui.notify(`Pi Coder → ${formatDecision(lastDecision)}`, "info");
+    };
+    const disclose = (choice: Choice<ChosenModel>) => {
+      publish({
+        provider: choice.model.provider,
+        model: choice.model.id,
+        tier: choice.tier,
+        confidence: choice.confidence,
+        reasonCode: choice.reasonCode,
+        via,
+        latencyMs: decisionLatencyMs,
+      });
+    };
+    if (!selected) {
+      publish({
+        provider: actualCurrent?.provider ?? "none",
+        model: actualCurrent?.id ?? "none",
+        tier: actualCurrent?.tier ?? "none",
+        confidence: "low",
+        reasonCode: "no_eligible_model",
+        via,
+        latencyMs: decisionLatencyMs,
+      });
+      return;
+    }
     if (
       ctx.model?.provider !== selected.model.provider ||
       ctx.model.id !== selected.model.id
@@ -355,6 +404,8 @@ export default function extension(pi: ExtensionAPI): void {
             "Pi Coder: selected model unavailable; keeping current model",
             "warning",
           );
+          const retained = controller.active();
+          if (retained) disclose(retained);
           return;
         }
       } catch {
@@ -363,6 +414,8 @@ export default function extension(pi: ExtensionAPI): void {
           "Pi Coder: selected model unavailable; keeping current model",
           "warning",
         );
+        const retained = controller.active();
+        if (retained) disclose(retained);
         return;
       } finally {
         settingModel = false;
@@ -377,6 +430,7 @@ export default function extension(pi: ExtensionAPI): void {
             ? "high"
             : "medium",
     );
+    disclose(selected);
   });
   pi.on("message_end", async (event, ctx) => {
     if (event.message.role !== "assistant") return;
@@ -431,7 +485,7 @@ export default function extension(pi: ExtensionAPI): void {
       if (!args.trim() || parts[0] === "status") {
         const status = controller.status();
         ctx.ui.notify(
-          `Pi Coder: ${status.mode}${status.tier ? ` (${status.tier})` : ""}; current ${ctx.model?.provider ?? "none"}/${ctx.model?.id ?? "none"}`,
+          `Pi Coder: ${status.mode}${status.tier ? ` (${status.tier})` : ""}; current ${ctx.model?.provider ?? "none"}/${ctx.model?.id ?? "none"}; last ${lastDecision ? formatDecision(lastDecision) : "none"}`,
           "info",
         );
       } else if (parts[0] === "auto") {

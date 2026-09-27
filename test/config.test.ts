@@ -34,6 +34,16 @@ it("ships an opinionated default tier policy", () => {
   expect(DEFAULT_MODEL_POLICY.length).toBeGreaterThan(4);
 });
 
+it("rejects malformed router model configuration", () => {
+  expect(() => loadConfig({ routerModel: [] })).toThrow(/routerModel/);
+  expect(() => loadConfig({ routerModel: "proxy/model" })).toThrow(
+    /routerModel/,
+  );
+  expect(() => loadConfig({ routerModel: "anthropic/" })).toThrow(
+    /routerModel/,
+  );
+});
+
 it("ships only exact IDs in the pinned Pi provider catalog", () => {
   const catalog = new Map<string, Set<string>>();
   for (const provider of ["anthropic", "openai", "openai-codex"]) {
