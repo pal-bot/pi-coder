@@ -1,0 +1,62 @@
+{
+  "name": "@pal-bot/pi-coder",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pal-bot/pi-coder.git"
+  },
+  "homepage": "https://github.com/pal-bot/pi-coder#readme",
+  "bugs": {
+    "url": "https://github.com/pal-bot/pi-coder/issues"
+  },
+  "description": "Cost-aware model routing and private local usage records for Pi",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "model-routing",
+    "usage-analytics"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": "./dist/extension.js"
+  },
+  "pi": {
+    "extensions": [
+      "./dist/extension.js"
+    ]
+  },
+  "scripts": {
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "bun build src/extension.ts --target=node --format=esm --external @earendil-works/pi-coding-agent --external @earendil-works/pi-ai --outdir dist",
+    "prepack": "bun run build"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "0.87.1"
+  },
+  "dependencies": {
+    "@earendil-works/pi-ai": "0.87.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@types/node": "24.7.2",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}
