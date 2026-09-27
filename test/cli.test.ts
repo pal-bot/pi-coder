@@ -47,19 +47,25 @@ describe("pic CLI", () => {
   it("launches Pi with only the two reviewed extensions before user arguments", () => {
     const root = mkdtempSync(join(tmpdir(), "pic-launch-"));
     const fakePi = join(root, "fake-pi");
+    const fakeAuth = join(root, "auth.ts");
+    const fakePiCoder = join(root, "extension.js");
     writeFileSync(fakePi, '#!/usr/bin/env bash\nprintf "%s\\n" "$@"\n');
+    writeFileSync(fakeAuth, "");
+    writeFileSync(fakePiCoder, "");
     chmodSync(fakePi, 0o755);
 
     const result = run("bash", ["bin/pic", "--model", "anthropic/test"], {
       PIC_PI_BIN: fakePi,
+      PIC_AUTH_EXTENSION: fakeAuth,
+      PIC_CODER_EXTENSION: fakePiCoder,
     });
     requireSuccess(result);
     expect(result.stdout.trim().split("\n")).toEqual([
       "--no-extensions",
       "--extension",
-      join(repo, "node_modules/@gotgenes/pi-anthropic-auth/src/index.ts"),
+      fakeAuth,
       "--extension",
-      join(repo, "dist/extension.js"),
+      fakePiCoder,
       "--model",
       "anthropic/test",
     ]);

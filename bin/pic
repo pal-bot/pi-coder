@@ -27,8 +27,8 @@ if [ "${1:-}" = "update" ]; then
 fi
 
 pi_bin=${PIC_PI_BIN:-$root/node_modules/.bin/pi}
-auth_extension=$root/node_modules/@gotgenes/pi-anthropic-auth/src/index.ts
-pi_coder_extension=$root/dist/extension.js
+auth_extension=${PIC_AUTH_EXTENSION:-$root/node_modules/@gotgenes/pi-anthropic-auth/src/index.ts}
+pi_coder_extension=${PIC_CODER_EXTENSION:-$root/dist/extension.js}
 
 if [ ! -x "$pi_bin" ]; then
   printf 'pic: Pi is not installed at %s; run the installer again\n' "$pi_bin" >&2
