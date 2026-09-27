@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+resolve_script() {
+  local source=${BASH_SOURCE[0]}
+  local directory
+  local target
+  while [ -L "$source" ]; do
+    directory=$(cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd)
+    target=$(readlink "$source")
+    case "$target" in
+      /*) source=$target ;;
+      *) source=$directory/$target ;;
+    esac
+  done
+  directory=$(cd -P "$(dirname "$source")" >/dev/null 2>&1 && pwd)
+  printf '%s/%s\n' "$directory" "$(basename "$source")"
+}
+
+script_path=$(resolve_script)
+root=$(cd -P "$(dirname "$script_path")/.." >/dev/null 2>&1 && pwd)
+installer=${PIC_INSTALLER:-$root/scripts/install.sh}
+
+if [ "${1:-}" = "update" ]; then
+  shift
+  PIC_HOME="$root" exec "$installer" update "$@"
+fi
+
+pi_bin=${PIC_PI_BIN:-$root/node_modules/.bin/pi}
+auth_extension=$root/node_modules/@gotgenes/pi-anthropic-auth/src/index.ts
+pi_coder_extension=$root/dist/extension.js
+
+if [ ! -x "$pi_bin" ]; then
+  printf 'pic: Pi is not installed at %s; run the installer again\n' "$pi_bin" >&2
+  exit 1
+fi
+if [ ! -f "$auth_extension" ] || [ ! -f "$pi_coder_extension" ]; then
+  printf 'pic: extensions are not built; run pic update\n' >&2
+  exit 1
+fi
+
+exec "$pi_bin" \
+  --no-extensions \
+  --extension "$auth_extension" \
+  --extension "$pi_coder_extension" \
+  "$@"

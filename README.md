@@ -2,16 +2,28 @@
 
 Pi Coder is a Pi extension that chooses a model once for each new user request and writes local usage records after provider responses. It uses Pi's agent loop and authentication; it is not a Pi fork or a separate TUI. Anthropic Claude Pro/Max OAuth compatibility is provided by the pinned [`@gotgenes/pi-anthropic-auth`](https://github.com/gotgenes/pi-anthropic-auth) companion extension. Pi Coder does not invoke or supervise the Claude Code CLI itself.
 
-## Setup
+## Install
 
-Requires Node.js 22.19+ and Pi `@earendil-works/pi-coding-agent` 0.87.1. Bun is used to build and verify this repository.
+Requires Git, Bun 1.3.12+, and Node.js 22.19+. Download the installer, inspect it, then run it:
 
 ```sh
-npm install -g --ignore-scripts @earendil-works/pi-coding-agent@0.87.1
-bun install
-bun run build
-pi --list-models
+curl -fsSLo /tmp/pic-install.sh \
+  https://raw.githubusercontent.com/pal-bot/pi-coder/main/scripts/install.sh
+${PAGER:-less} /tmp/pic-install.sh
+bash /tmp/pic-install.sh install
 ```
+
+The installer clones `main` to `${XDG_DATA_HOME:-$HOME/.local/share}/pi-coder`, performs a frozen Bun install and build, and links `pic` into `${PIC_BIN_DIR:-$HOME/.local/bin}`. Ensure that directory is on `PATH`.
+
+Use `pic` anywhere you would use Pi. It launches Pi with extension discovery disabled and explicitly loads the pinned Anthropic OAuth compatibility extension before Pi Coder. User arguments pass through unchanged.
+
+```sh
+pic
+pic --model anthropic/claude-sonnet-4-6
+pic update
+```
+
+`pic update` refuses a checkout with tracked changes, fetches `origin/main`, fast-forwards only, reinstalls the frozen lockfile, and rebuilds. Set `PIC_HOME`, `PIC_BIN_DIR`, or `PIC_REPOSITORY` to override installer defaults.
 
 Authenticate the direct `anthropic`, `openai-codex`, or `openai` provider using Pi's `/login` flow or its supported provider environment variables. Run `/login anthropic` to use a Claude Pro/Max OAuth credential instead of `ANTHROPIC_API_KEY`. The companion extension preserves Pi's native login/refresh flow and applies the OAuth-compatible Anthropic request shaping to Pi Coder's main and auxiliary router calls. `openai-codex` is Pi's ChatGPT/Codex subscription provider; `openai` is the API-key provider. Pi Coder never stores credentials. It checks Pi's resolved endpoint and discards any returned authentication material without logging it. An authenticated Pi model is required for every configured routing candidate.
 
@@ -36,7 +48,7 @@ JSON
 
 `routerModel` is optional. Without it, Pi Coder uses the cheapest eligible configured model by Pi's input plus output list rates. If a configured router model is unavailable or its call fails, the current model stays selected when eligible; otherwise the policy tries a balanced candidate. Router output must be one valid `select_route` tool call with closed enum fields. Free-form text is never parsed as a decision.
 
-Run from the project where you want to use Pi. Review the built extension first and pass its absolute path explicitly:
+For development or manual loading, the command equivalent to `pic` is:
 
 ```sh
 PI_CODER_EXT="/absolute/path/to/pi-coder/dist/extension.js"
@@ -45,7 +57,7 @@ pi --no-extensions \
   --extension "$PI_CODER_EXT"
 ```
 
-`--no-extensions` disables discovered and configured extensions, including project extensions; Pi still loads the two explicit reviewed extensions. The OAuth compatibility extension must load before Pi Coder. Pi Coder has no `pi-coder` bin because Pi already provides the trusted launcher and TUI.
+`--no-extensions` disables discovered and configured extensions, including project extensions; Pi still loads the two explicit reviewed extensions. The OAuth compatibility extension must load before Pi Coder.
 
 The package manifest also supports normal Pi package installation after publication (`pi install npm:@pal-bot/pi-coder@0.1.0`). Use the explicit command above when you want to restrict extension loading.
 
@@ -76,7 +88,19 @@ bun audit
 npm pack --dry-run
 ```
 
-CI runs separate locked-install, format-check, lint, typecheck, test, build, audit, and package-verification steps. No release or publish automation is included.
+CI runs separate locked-install, format-check, lint, typecheck, test, build, audit, and package-verification steps.
+
+## Releases
+
+Conventional commits feed semantic-release. The existing OAuth MVP is baselined at `v0.1.0`; future `feat:` and `fix:` commits resolve to minor and patch releases. Release execution is deliberately manual through the GitHub Actions **Release** workflow.
+
+The workflow uses Node 24, reruns the complete gate, updates `package.json`, creates the version commit/tag, and creates a GitHub release. `@semantic-release/npm` is configured with `npmPublish: false`: npm publication remains disabled until the package scope and registry credentials are explicitly approved.
+
+Validate release configuration locally without publishing:
+
+```sh
+GITHUB_TOKEN="$(gh auth token)" bun run release:dry-run --no-ci
+```
 
 ## Current limits
 
